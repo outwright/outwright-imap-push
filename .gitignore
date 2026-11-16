@@ -1,0 +1,5 @@
+/bin/
+/config/
+/state/
+/secrets/
+compose.yml

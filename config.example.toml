@@ -1,0 +1,13 @@
+# Outwright IMAP push worker: one [[account]] per mailbox to watch.
+# Get the push address in Outwright: the account's settings, "Use your own push worker".
+
+[[account]]
+name = "home"                      # a name of your own, used in logs and for the state file
+host = "mail.example.org"
+port = 993
+tls = "tls"                        # "tls" (port 993) or "starttls" (port 143)
+user = "me@example.org"
+password_file = "/run/secrets/home" # or: password = "…"
+push_address = "https://push.outwright.app/v1/channels/REPLACE-ME/plain"
+poll = "5m"                        # only used when the server has no IDLE
+# ca_file = "/config/ca.pem"       # trust only this CA, for a server with a certificate of your own CA

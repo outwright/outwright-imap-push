@@ -1,0 +1,12 @@
+# Copy to compose.yml, put your config in ./config/config.toml, then: docker compose up -d --build
+services:
+  outwright-imap-push:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config:/config:ro
+      - state:/state
+      # - ./secrets:/run/secrets:ro   # for password_file
+
+volumes:
+  state:
