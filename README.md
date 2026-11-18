@@ -12,7 +12,7 @@ and posts to the account's push address when new mail comes in.
 
 - Your password stays on your machine. The push address carries nothing about your account,
   and what is posted to it carries nothing about your mail: Outwright fetches the mail itself.
-- IMAP IDLE where the server has it, polling where it does not.
+- IMAP IDLE where the server has it (renewed every 25 minutes, as RFC 2177 asks), polling where it does not.
 - A first start, a changed UIDVALIDITY, your own saved copies (already `\Seen`) and Outwright's
   check message never notify. The last UID seen is kept, so a restart announces nothing old.
 - TLS or STARTTLS only.
@@ -31,8 +31,9 @@ Without Docker: `make build` (Go 1.27 or later) makes `bin/outwright-imap-push`.
 
 ## Configure
 
-1. In Outwright, open the account's settings and choose **Use your own push worker**. Copy the
-   push address it shows.
+1. In Outwright, open the account's settings and choose **Push for a server without push**,
+   under the Notifications switch while push from the server is not on. Copy the push address it
+   shows.
 2. Copy `config.example.toml` to `config/config.toml` and fill in one `[[account]]` per mailbox:
    server, port, `tls` (`"tls"` or `"starttls"`), user, `password` or `password_file`, and the
    push address. A server whose certificate comes from a CA of your own takes `ca_file`.

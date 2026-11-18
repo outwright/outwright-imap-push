@@ -124,6 +124,9 @@ func run(t *testing.T, a Account, st *State, s Sender) (<-chan struct{}, func())
 	t.Helper()
 	scans := make(chan struct{}, 100)
 	synced = func(string) { scans <- struct{}{} }
+	idled := make(chan struct{}, 100)
+	idling = func(string) { idled <- struct{}{} }
+	lastIdled = idled
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -134,6 +137,8 @@ func run(t *testing.T, a Account, st *State, s Sender) (<-chan struct{}, func())
 		cancel()
 		<-done
 		synced = func(string) {}
+		idling = func(string) {}
+		beforeIdle = func(string) {}
 	}
 	t.Cleanup(stop)
 	return scans, stop
@@ -145,6 +150,20 @@ func waitScan(t *testing.T, scans <-chan struct{}) {
 	case <-scans:
 	case <-time.After(5 * time.Second):
 		t.Fatal("no scan")
+	}
+}
+
+// lastIdled is the newest run's signal that its watcher is in IDLE.
+var lastIdled <-chan struct{}
+
+// waitIdle waits until the watcher is in IDLE: mail delivered before that may land in the gap
+// between its scan and its IDLE, which only the refresh finds.
+func waitIdle(t *testing.T) {
+	t.Helper()
+	select {
+	case <-lastIdled:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no idle")
 	}
 }
 
@@ -191,6 +210,7 @@ func TestNewMessagePosts(t *testing.T) {
 	var r recorder
 	scans, _ := run(t, f.account(), newState(t), &r)
 	waitScan(t, scans)
+	waitIdle(t)
 	f.deliver(t, "hello")
 	eventually(t, func() bool { n, _ := r.counts(); return n == 1 })
 }
@@ -200,6 +220,7 @@ func TestBurstPostsOnce(t *testing.T) {
 	var r recorder
 	scans, _ := run(t, f.account(), newState(t), &r)
 	waitScan(t, scans)
+	waitIdle(t)
 	for i := 0; i < 5; i++ {
 		f.deliver(t, "burst")
 	}
@@ -215,6 +236,7 @@ func TestSeenAppendIsNotNewMail(t *testing.T) {
 	var r recorder
 	scans, _ := run(t, f.account(), newState(t), &r)
 	waitScan(t, scans)
+	waitIdle(t)
 	f.deliver(t, "my own copy", imap.FlagSeen)
 	waitScan(t, scans)
 	time.Sleep(200 * time.Millisecond)
@@ -228,6 +250,7 @@ func TestCheckMessagePostsCheck(t *testing.T) {
 	var r recorder
 	scans, _ := run(t, f.account(), newState(t), &r)
 	waitScan(t, scans)
+	waitIdle(t)
 	f.deliver(t, Marker+"AAAAAAAAAAAAAAAAAAAAAA", imap.FlagSeen, imap.FlagDeleted)
 	eventually(t, func() bool { _, c := r.counts(); return len(c) == 1 })
 	if n, c := r.counts(); n != 0 || c[0] != "AAAAAAAAAAAAAAAAAAAAAA" {
@@ -240,6 +263,7 @@ func TestBadNonceIsIgnored(t *testing.T) {
 	var r recorder
 	scans, _ := run(t, f.account(), newState(t), &r)
 	waitScan(t, scans)
+	waitIdle(t)
 	f.deliver(t, Marker+"short", imap.FlagSeen, imap.FlagDeleted)
 	waitScan(t, scans)
 	time.Sleep(200 * time.Millisecond)
@@ -374,6 +398,7 @@ func TestFailedPostIsTriedAgain(t *testing.T) {
 	st := newState(t)
 	scans, _ := run(t, f.account(), st, &r)
 	waitScan(t, scans)
+	waitIdle(t)
 	before := st.Last()
 	f.deliver(t, "hello")
 	eventually(t, func() bool { n, _ := r.counts(); return n == 1 })
@@ -392,4 +417,18 @@ func TestBackoffResetsOnlyAfterAStableSession(t *testing.T) {
 	if got := nextWait(maxBackoff, 0); got != maxBackoff {
 		t.Fatalf("capped: %v", got)
 	}
+}
+
+// Mail that lands between a scan and the IDLE after it is told of by no server notice here: the
+// IDLE ends now and then, and the scan after it finds the mail.
+func TestMailBetweenScanAndIdleIsFoundOnTheRefresh(t *testing.T) {
+	old := idleRefresh
+	idleRefresh = 300 * time.Millisecond
+	t.Cleanup(func() { idleRefresh = old })
+	f := startServer(t, withIdle)
+	var once sync.Once
+	beforeIdle = func(string) { once.Do(func() { f.deliver(t, "in the gap") }) }
+	var r recorder
+	run(t, f.account(), newState(t), &r)
+	eventually(t, func() bool { n, _ := r.counts(); return n == 1 })
 }

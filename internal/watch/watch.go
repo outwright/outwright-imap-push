@@ -65,6 +65,13 @@ var (
 	idles = func(c *imapclient.Client) bool { return c.Caps().Has(imap.CapIdle) }
 	// synced is called after every scan (tests wait on it).
 	synced = func(string) {}
+	// idleRefresh is how long one IDLE lasts before it is ended and the Inbox scanned again:
+	// RFC 2177 asks for a new IDLE within 29 minutes, and mail that landed between a scan and
+	// the IDLE after it, which a server need not tell of, is found by then.
+	idleRefresh = 25 * time.Minute
+	// beforeIdle is called before each IDLE is asked for, idling once the server is in it (tests).
+	beforeIdle = func(string) {}
+	idling     = func(string) {}
 )
 
 // Run watches the account until ctx ends, reconnecting with backoff. It returns early only
@@ -160,23 +167,30 @@ func session(ctx context.Context, a Account, st *State, s Sender) error {
 	idle := idles(c)
 	for {
 		if idle {
+			beforeIdle(a.Name)
 			cmd, err := c.Idle()
 			if err != nil {
 				return fmt.Errorf("idle: %w", err)
 			}
+			idling(a.Name)
+			refresh := time.NewTimer(idleRefresh)
 			select {
 			case <-ctx.Done():
+				refresh.Stop()
 				cmd.Close()
 				return nil
 			case <-c.Closed():
+				refresh.Stop()
 				return errors.New("server closed the connection")
 			case <-changed:
-			}
-			select {
-			case <-ctx.Done():
-				cmd.Close()
-				return nil
-			case <-time.After(settle):
+				refresh.Stop()
+				select {
+				case <-ctx.Done():
+					cmd.Close()
+					return nil
+				case <-time.After(settle):
+				}
+			case <-refresh.C:
 			}
 			if err := cmd.Close(); err != nil {
 				return fmt.Errorf("idle: %w", err)
