@@ -5,6 +5,9 @@
 > is a working starting point you build, adapt and run yourself. Fixes and pull requests are
 > welcome, but there is no promise it fits your server or your setup.
 
+**Outwright is in alpha.** To join, sign up on [outwright.app](https://outwright.app/#join) and
+install it straight away with TestFlight.
+
 Outwright gets push from Stalwart (JMAP), Dovecot (with Outwright's script) and Microsoft 365.
 For any other IMAP server you can run a sender of your own that tells Outwright when mail
 arrives. This is one: a small program that keeps an IMAP connection on each configured Inbox
